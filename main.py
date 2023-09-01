@@ -6,6 +6,7 @@ import calmap
 from tkinter import filedialog
 from tkinter import Tk
 import datetime
+import matplotlib.pyplot
 
 
 def is_valid(message: dict):
@@ -42,8 +43,8 @@ for folder_name in os.listdir(folder_selected):
         conversation = json.load(json_file)
 
         # Don't want group chats
-        if len(conversation['participants']) > 2:
-            continue
+        # if len(conversation['participants']) > 2:
+        #     continue
 
         for message in conversation["messages"]:
             if is_valid(message):
@@ -53,5 +54,28 @@ for folder_name in os.listdir(folder_selected):
                     1
                 ))
 
-for aggregate_conversations in cur.execute("SELECT name, date, SUM(count) FROM messages GROUP BY name, date").fetchall():
-    min_date, max_date = cur.execute("SELECT MIN(date), MAX(date) from messages WHERE name = ? GROUP BY name", (aggregate_conversations[0],)).fetchall()[0]
+for name in cur.execute("SELECT DISTINCT name FROM messages").fetchall():
+    print("Working on ", name)
+    min_date, max_date = cur.execute("SELECT MIN(date), MAX(date) from messages WHERE name = ? GROUP BY name", (name[0],)).fetchall()[0]
+    min_date = datetime.date.fromisoformat(min_date)
+    max_date = datetime.date.fromisoformat(max_date)
+    difference_days = (max_date - min_date).days
+    if difference_days == 0: continue
+    all_days = pd.date_range(min_date, periods=difference_days + 1, freq="D")
+
+    current_conversation = dict()
+    for entry in cur.execute("SELECT date, SUM(count) FROM messages WHERE name = ? GROUP BY name, date", (name[0],)):
+        current_conversation[entry[0]] = entry[1]
+    for i in range(0, difference_days):
+        calculated_date = min_date + datetime.timedelta(days=i)
+        if calculated_date in current_conversation:
+            pass
+        else:
+            current_conversation[calculated_date] = 0
+
+    events = pd.Series(current_conversation,
+                       index=all_days)
+    fig, axes = calmap.calendarplot(events, fillcolor="gray", fig_suptitle=name[0], fig_kws=dict(figsize=(15, 12)))
+    fig.colorbar(axes[0].get_children()[1], ax=axes.ravel().tolist())
+    fig.savefig(f"./images/{name[0]}.png")
+    matplotlib.pyplot.close()
